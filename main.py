@@ -12,9 +12,17 @@ simplefilter(action='ignore', category=FutureWarning)
 def date_to_onehot(df):
     df['Дата накладной'] = pd.to_datetime(df['Дата накладной'], dayfirst=True)
     df['Дата накладной'] = df['Дата накладной'].dt.month
+    df_by_month = pd.pivot_table(df,
+                            index=["Код товара", "Дата накладной", "Оптовая торговля", "Розничная торговля"],
+                            values=["Продажи, шт", "скидка"],
+                            aggfunc={"Продажи, шт": np.sum, "скидка": np.mean})
+    df = df_by_month.reset_index()
     onehot_date = pd.get_dummies(df['Дата накладной'])
     df = df.drop('Дата накладной', axis=1)
     df = df.join(onehot_date)
+    #onehot_date = pd.get_dummies(df_by_month['Дата накладной'])
+    #df_by_month = df_by_month.drop('Дата накладной', axis=1)
+    #df_by_month = df_by_month.join(onehot_date)
     return df
 
 
@@ -34,8 +42,11 @@ def prepare_df_discount(df_discount):
     return df_discount
 
 
-def regression(df, x_col):
-    X = df[x_col]
+def regression(df):
+    x_col = list(df)
+    del x_col[0]
+    del x_col[2]
+    X = df[x_col]   #['Оптовая торговля', 'Розничная торговля', 'скидка', 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
     y = df['Продажи, шт']
     X_train, X_test, y_train, y_test = train_test_split(X, y)
     regressor = LinearRegression()
@@ -44,6 +55,7 @@ def regression(df, x_col):
 #    y_pred = regressor.predict(X_test)
 #    res_df = pd.DataFrame({'Actual': y_test, 'Predicted': y_pred})
     inter = regressor.intercept_
+    print(inter, coeff_df)
     return coeff_df, inter
 
 
@@ -75,22 +87,20 @@ def prediction(df_discount, coeff, inter, el, res_df):
     return(res_df)
 
 
+pd.set_option('display.max_columns', None)
 df = pd.read_csv('Shipments_by_PO.csv')
 df_mapping = pd.read_csv('Mapping.csv')
 df_discount = pd.read_excel('Forecast_of_discounts.xlsx', sheet_name='Sheet1')
 #print(df_discount.head())
-df = date_to_onehot(df)
 df = channel_to_onehot(df, df_mapping)
+df = date_to_onehot(df)
 code_list = pd.unique(df['Код товара'])
-x_col = list(df)
-del x_col[0]
-del x_col[0]
 df_discount = prepare_df_discount(df_discount)
 res_df = pd.DataFrame()
 for el in code_list:
-    if el != 324:
+    if (el != 324) and (el !=231) and (el !=308):
         product_df = df.loc[df['Код товара'] == el]
-        coeff, inter = regression(product_df, x_col)
+        coeff, inter = regression(product_df)
         res_df = prediction(df_discount, coeff, inter, el, res_df)
 print(res_df)
 res_df.to_csv('Result.csv')
